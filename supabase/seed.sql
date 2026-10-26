@@ -1,0 +1,3 @@
+-- Intentionally no seed data.
+-- Load the department catalog only after confirming it against an official UENR source.
+-- Do not add demo users, sample students, or prototype department rows here.
