@@ -8,6 +8,7 @@ import { Brand } from "../brand";
 import { ThemeToggle } from "../ui/theme-toggle";
 import { IconBell, IconClipboard, IconCompass, IconHome, IconSettings, IconShieldCheck, IconUsers } from "../icons";
 import { cn } from "../../lib/utils";
+import { PomodoroTimer } from "../pomodoro-timer";
 
 const iconButtonClass =
   "relative inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800";
@@ -165,6 +166,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </div>
       </nav>
+      <PomodoroTimer />
     </div>
   );
 }
