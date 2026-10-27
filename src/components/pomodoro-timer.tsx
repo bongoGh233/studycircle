@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { cn } from "../../lib/utils";
 
 type Mode = "focus" | "short" | "long";
 
@@ -14,6 +13,10 @@ const LABELS: Record<Mode, string> = {
   short: "Short break",
   long: "Long break",
 };
+
+function cn(...classes: Array<string | undefined | null | false>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
