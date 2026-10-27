@@ -15,6 +15,7 @@ export function Profile() {
     departments,
     updateProfile,
     requestVerification,
+    redeemDepartmentCode,
     profileError,
   } = useMock();
 
@@ -32,6 +33,8 @@ export function Profile() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  const [accessCode, setAccessCode] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
 
   if (!currentUser) {
     return <Navigate to="/login" replace />;
@@ -105,11 +108,35 @@ export function Profile() {
     }
   };
 
+  const onRedeemCode = async (event: FormEvent) => {
+    event.preventDefault();
+    if (redeeming) return;
+    setRedeeming(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await redeemDepartmentCode(accessCode);
+      if (!result.ok) {
+        setError(result.error ?? "That code could not be redeemed. Please try again.");
+        return;
+      }
+      setAccessCode("");
+      setMessage(
+        `Verified. You now have access to ${result.department ?? "your department"}'s study groups.`
+      );
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setRedeeming(false);
+    }
+  };
+
   const verificationCopy =
     verificationStatus === "VERIFIED"
       ? "Your department affiliation is verified."
       : verificationStatus === "PENDING"
-        ? "Your request is pending. A moderator must confirm UENR eligibility through an approved evidence process."
+        ? "Enter the department code your class moderator shared to get verified instantly, or wait for a moderator to review your request."
         : verificationStatus === "REJECTED"
           ? "Your last verification request was rejected. Check your details and request another review."
           : "UENR eligibility must be confirmed before group access. The evidence and review process still needs to be agreed.";
@@ -183,13 +210,28 @@ export function Profile() {
             <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
               {verificationCopy}
             </p>
+            {verificationStatus !== "VERIFIED" ? (
+              <form className="mt-4 space-y-2" onSubmit={onRedeemCode}>
+                <Input
+                  label="Department code"
+                  value={accessCode}
+                  onChange={(event) => setAccessCode(event.target.value.toUpperCase())}
+                  placeholder="e.g. CLIM-7K2P"
+                />
+                <Button type="submit" className="w-full" loading={redeeming}>
+                  Verify with code
+                </Button>
+              </form>
+            ) : null}
             {canRequestVerification ? (
               <Button
-                className="mt-4 w-full"
+                variant="ghost"
+                size="sm"
+                className="mt-2 w-full"
                 onClick={onRequestVerification}
                 loading={requesting}
               >
-                Request verification
+                Ask a moderator instead
               </Button>
             ) : null}
           </div>

@@ -67,7 +67,7 @@ export function CreateGroup() {
               ? "Add your department on your profile first."
               : !emailVerified
                 ? "Verify your email address to continue."
-                : "Your department is awaiting moderator review. You can create a group as soon as it is verified."}
+                : "Your department is not verified yet. Enter the department code your class moderator shared, or ask a moderator to approve you."}
           </Alert>
           <div className="mt-6 flex flex-wrap gap-3">
             {!emailVerified ? (

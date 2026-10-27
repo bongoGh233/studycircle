@@ -55,6 +55,20 @@ export type CreateGroupResult = ActionResult & {
   group?: Group;
 };
 
+/** A department's shared access code, visible to moderators only. */
+export type DepartmentCode = {
+  department_id: string;
+  code: string;
+};
+
+export type RedeemCodeResult = ActionResult & {
+  department?: string;
+};
+
+export type RotateCodeResult = ActionResult & {
+  newCode?: string;
+};
+
 type ProfilePatch = Partial<
   Pick<Profile, "display_name" | "department_id" | "programme" | "academic_level">
 >;
@@ -100,6 +114,10 @@ type AppContextValue = {
   refreshAuth: () => Promise<ActionResult>;
   updateProfile: (userId: string, patch: ProfilePatch) => Promise<ActionResult>;
   requestVerification: () => Promise<ActionResult>;
+  departmentCodes: DepartmentCode[];
+  redeemDepartmentCode: (code: string) => Promise<RedeemCodeResult>;
+  refreshDepartmentCodes: () => Promise<void>;
+  rotateDepartmentCode: (departmentId: string) => Promise<RotateCodeResult>;
   refreshCommunity: () => Promise<void>;
   createGroup: (creatorId: string, input: CreateGroupInput) => Promise<CreateGroupResult>;
   sendJoinRequest: (
@@ -126,6 +144,23 @@ type AppContextValue = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 const ACADEMIC_LEVELS: AcademicLevel[] = ["100 Level", "200 Level", "300 Level", "400 Level"];
+
+/**
+ * Builds a shareable department code such as `CLIM-7K2P`.
+ *
+ * Deliberately avoids characters that are easy to misread when read aloud or
+ * copied from a WhatsApp message (0/O, 1/I/L).
+ */
+function generateDepartmentCode(departmentId: string): string {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const prefix =
+    departmentId.replace(/[^a-zA-Z]/g, "").slice(0, 4).toUpperCase() || "UENR";
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  let suffix = "";
+  for (const byte of bytes) suffix += alphabet[byte % alphabet.length];
+  return `${prefix}-${suffix}`;
+}
 
 function asAcademicLevel(value: unknown): AcademicLevel | null {
   return typeof value === "string" && ACADEMIC_LEVELS.includes(value as AcademicLevel)
@@ -368,6 +403,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [departmentCodes, setDepartmentCodes] = useState<DepartmentCode[]>([]);
   const [authReady, setAuthReady] = useState(!supabase);
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -1130,6 +1166,88 @@ export function MockProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   };
 
+  const refreshDepartmentCodes = useCallback(async () => {
+    const client = supabase;
+    if (!client) return;
+
+    // RLS only returns rows to moderators; students get an empty list, not an error.
+    const { data, error } = await client
+      .from("department_codes")
+      .select("department_id, code");
+
+    if (error) {
+      console.warn("Could not load department codes:", error.message);
+      return;
+    }
+    setDepartmentCodes(data ?? []);
+  }, []);
+
+  const redeemDepartmentCode: AppContextValue["redeemDepartmentCode"] = async (rawCode) => {
+    if (!supabase) {
+      return { ok: false, error: supabaseConfigError ?? "Supabase is not configured." };
+    }
+
+    const trimmed = rawCode.trim();
+    if (trimmed.length < 4) {
+      return { ok: false, error: "Enter the code your class moderator shared with you." };
+    }
+
+    const { data, error } = await supabase.rpc("redeem_department_code", { p_code: trimmed });
+    if (error) {
+      const friendly = normalizeDataError(error);
+      return { ok: false, error: friendly.message, code: friendly.code };
+    }
+
+    const payload = (data ?? {}) as {
+      ok?: boolean;
+      department?: string;
+      already_verified?: boolean;
+    };
+
+    if (!payload.ok) {
+      return {
+        ok: false,
+        error:
+          "That code is not valid. Ask your class moderator for the current code and try again.",
+      };
+    }
+
+    // The RPC writes the profile; reload so the UI reflects VERIFIED immediately.
+    await refreshProfiles();
+    return { ok: true, department: payload.department };
+  };
+
+  const rotateDepartmentCode: AppContextValue["rotateDepartmentCode"] = async (departmentId) => {
+    if (!supabase) {
+      return { ok: false, error: supabaseConfigError ?? "Supabase is not configured." };
+    }
+
+    const nextCode = generateDepartmentCode(departmentId);
+    const { error } = await supabase.from("department_codes").upsert(
+      {
+        department_id: departmentId,
+        code: nextCode,
+        created_by: currentUserId,
+      },
+      { onConflict: "department_id" }
+    );
+
+    if (error) {
+      const friendly = normalizeDataError(error);
+      return { ok: false, error: friendly.message, code: friendly.code };
+    }
+
+    await refreshDepartmentCodes();
+    return { ok: true, newCode: nextCode };
+  };
+
+  // Moderators need the codes loaded to share them; students never see this list.
+  useEffect(() => {
+    if (authMode !== "supabase" || !authReady) return;
+    if (currentUser?.role !== "MODERATOR") return;
+    void refreshDepartmentCodes();
+  }, [authMode, authReady, currentUser?.role, refreshDepartmentCodes]);
+
   const value: AppContextValue = {
     authMode,
     authReady,
@@ -1164,6 +1282,10 @@ export function MockProvider({ children }: { children: ReactNode }) {
     refreshAuth,
     updateProfile,
     requestVerification,
+    departmentCodes,
+    redeemDepartmentCode,
+    refreshDepartmentCodes,
+    rotateDepartmentCode,
     refreshCommunity,
     createGroup,
     sendJoinRequest,

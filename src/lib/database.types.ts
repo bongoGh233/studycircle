@@ -40,6 +40,14 @@ export type DepartmentRow = {
   created_at: string;
 };
 
+export type DepartmentCodeRow = {
+  department_id: string;
+  code: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type VerificationReviewRow = {
   id: string;
   profile_id: string;
@@ -133,6 +141,17 @@ type TableDefinition<Row, Insert = Partial<Row>, Update = Partial<Row>> = {
 export type Database = {
   public: {
     Tables: {
+      department_codes: TableDefinition<
+        DepartmentCodeRow,
+        {
+          department_id: string;
+          code: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<DepartmentCodeRow>
+      >;
       departments: TableDefinition<
         DepartmentRow,
         { id: string; name: string; is_active?: boolean; created_at?: string },
@@ -242,6 +261,10 @@ export type Database = {
       submit_verification: {
         Args: Record<string, never>;
         Returns: null;
+      };
+      redeem_department_code: {
+        Args: { p_code: string };
+        Returns: Json;
       };
       review_verification: {
         Args: {
