@@ -48,6 +48,15 @@ export type DepartmentCodeRow = {
   updated_at: string;
 };
 
+export type GroupPostRow = {
+  id: string;
+  group_id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type VerificationReviewRow = {
   id: string;
   profile_id: string;
@@ -151,6 +160,18 @@ export type Database = {
           updated_at?: string;
         },
         Partial<DepartmentCodeRow>
+      >;
+      group_posts: TableDefinition<
+        GroupPostRow,
+        {
+          id?: string;
+          group_id: string;
+          author_id: string;
+          content: string;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<GroupPostRow>
       >;
       departments: TableDefinition<
         DepartmentRow,

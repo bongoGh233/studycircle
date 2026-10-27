@@ -28,6 +28,7 @@ import type {
   User,
   VerificationStatus,
 } from "../data/types";
+import type { Post as GroupPost } from "../data/types";
 import { supabase, supabaseConfigError, authRedirectUrl } from "../lib/supabase";
 import { normalizeAuthError, normalizeDataError } from "../lib/error-messages";
 import type {
@@ -91,7 +92,7 @@ type AppContextValue = {
   reports: Report[];
   auditLogs: AuditLog[];
   sessions: StudySession[];
-  posts: Post[];
+  posts: GroupPost[];
   resources: Resource[];
   rules: GroupRule[];
   acknowledgements: RuleAcknowledgement[];
@@ -120,6 +121,8 @@ type AppContextValue = {
   rotateDepartmentCode: (departmentId: string) => Promise<RotateCodeResult>;
   refreshCommunity: () => Promise<void>;
   createGroup: (creatorId: string, input: CreateGroupInput) => Promise<CreateGroupResult>;
+  createPost: (groupId: string, content: string) => Promise<ActionResult>;
+  deletePost: (postId: string) => Promise<ActionResult>;
   sendJoinRequest: (
     studentId: string,
     groupId: string,
@@ -404,6 +407,18 @@ export function MockProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [departmentCodes, setDepartmentCodes] = useState<DepartmentCode[]>([]);
+  const [posts, setPosts] = useState<GroupPost[]>([]);
+
+  const mapPost = useCallback((row: Database["public"]["Tables"]["group_posts"]["Row"]): GroupPost => {
+    return {
+      id: row.id,
+      group_id: row.group_id,
+      author_id: row.author_id,
+      content: row.content,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }, []);
   const [authReady, setAuthReady] = useState(!supabase);
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -418,7 +433,6 @@ export function MockProvider({ children }: { children: ReactNode }) {
   const rules: GroupRule[] = [];
   const acknowledgements: RuleAcknowledgement[] = [];
   const sessions: StudySession[] = [];
-  const posts: Post[] = [];
   const resources: Resource[] = [];
   const reports: Report[] = [];
   const auditLogs: AuditLog[] = [];
@@ -586,13 +600,14 @@ export function MockProvider({ children }: { children: ReactNode }) {
     setCommunityError(null);
 
     try {
-      const [groupsResult, membershipsResult, requestsResult, notificationsResult, cardsResult] =
+      const [groupsResult, membershipsResult, requestsResult, notificationsResult, cardsResult, postsResult] =
         await Promise.all([
           client.from("groups").select("*").order("created_at", { ascending: false }),
           client.from("group_memberships").select("*").order("joined_at", { ascending: false }),
           client.from("join_requests").select("*").order("created_at", { ascending: false }),
           client.from("notifications").select("*").order("created_at", { ascending: false }),
           client.rpc("list_profile_cards"),
+          client.from("group_posts").select("*").order("created_at", { ascending: true }),
         ]);
 
       const firstError =
@@ -608,6 +623,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
         setMemberships([]);
         setJoinRequests([]);
         setNotifications([]);
+        setPosts([]);
         return;
       }
 
@@ -615,6 +631,7 @@ export function MockProvider({ children }: { children: ReactNode }) {
       setMemberships((membershipsResult.data ?? []).map(mapMembership));
       setJoinRequests((requestsResult.data ?? []).map(mapJoinRequest));
       setNotifications((notificationsResult.data ?? []).map(mapNotification));
+      setPosts(((postsResult.data ?? []) as Database["public"]["Tables"]["group_posts"]["Row"][]).map(mapPost));
 
       if (cardsResult.error) {
         // Names are cosmetic; a directory failure must not hide the groups.
@@ -1217,7 +1234,44 @@ export function MockProvider({ children }: { children: ReactNode }) {
     return { ok: true, department: payload.department };
   };
 
+  const createPost: AppContextValue["createPost"] = async (groupId, content) => {
+    if (!currentUserId) return { ok: false, error: "Sign in to post." };
+    if (!supabase) return { ok: false, error: supabaseConfigError ?? "Supabase is not configured." };
+
+    const trimmed = content.trim();
+    if (trimmed.length < 1) return { ok: false, error: "Write something before posting." };
+    if (trimmed.length > 2000) return { ok: false, error: "Post must be 2000 characters or fewer." };
+
+    const { error } = await supabase.from("group_posts").insert({
+      group_id: groupId,
+      author_id: currentUserId,
+      content: trimmed,
+    });
+    if (error) {
+      const friendly = normalizeDataError(error);
+      return { ok: false, error: friendly.message, code: friendly.code };
+    }
+    await refreshCommunity();
+    return { ok: true };
+  };
+
+  const deletePost: AppContextValue["deletePost"] = async (postId) => {
+    if (!currentUserId) return { ok: false, error: "Sign in to delete posts." };
+    if (!supabase) return { ok: false, error: supabaseConfigError ?? "Supabase is not configured." };
+
+    const { error } = await supabase.from("group_posts").delete().eq("id", postId);
+    if (error) {
+      const friendly = normalizeDataError(error);
+      return { ok: false, error: friendly.message, code: friendly.code };
+    }
+    await refreshCommunity();
+    return { ok: true };
+  };
+
   const rotateDepartmentCode: AppContextValue["rotateDepartmentCode"] = async (departmentId) => {
+    if (!currentUserId) {
+      return { ok: false, error: "Sign in to manage department codes." };
+    }
     if (!supabase) {
       return { ok: false, error: supabaseConfigError ?? "Supabase is not configured." };
     }
@@ -1288,6 +1342,8 @@ export function MockProvider({ children }: { children: ReactNode }) {
     rotateDepartmentCode,
     refreshCommunity,
     createGroup,
+    createPost,
+    deletePost,
     sendJoinRequest,
     withdrawJoinRequest,
     decideJoinRequest,

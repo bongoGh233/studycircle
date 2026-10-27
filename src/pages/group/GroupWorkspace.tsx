@@ -13,9 +13,12 @@ const unavailable = "This feature is not connected to persistent storage yet. No
 
 export function GroupWorkspace() {
   const { groupId } = useParams<{ groupId: string }>();
-  const { currentUser, groups, memberships, posts, resources, sessions, rules, acknowledgements, users } = useMock();
+  const { currentUser, groups, memberships, posts, resources, sessions, rules, acknowledgements, users, createPost, deletePost } = useMock();
   const group = groups.find((g) => g.id === groupId);
   const [tab, setTab] = useState<Tab>("discussion");
+  const [postContent, setPostContent] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
 
   if (!currentUser) return <Navigate to="/login" replace />;
   if (!group) return <EmptyState title="Group not found" description="This group may have been removed or is not available to your account." />;
@@ -35,6 +38,25 @@ export function GroupWorkspace() {
     { id: "schedule", label: "Schedule", icon: IconCalendar },
     { id: "rules", label: "Rules", icon: IconBookOpen },
   ];
+
+  const handlePost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!groupId) return;
+    setPostError(null);
+    setPosting(true);
+    const result = await createPost(groupId, postContent);
+    setPosting(false);
+    if (result.ok) {
+      setPostContent("");
+    } else {
+      setPostError(result.error ?? "Failed to post.");
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("Delete this post?")) return;
+    await deletePost(postId);
+  };
 
   return (
     <div className="space-y-8">
@@ -86,26 +108,56 @@ export function GroupWorkspace() {
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               Member-only conversation about {group.name}.
             </p>
+            <form onSubmit={handlePost} className="mt-4 space-y-3">
+              <textarea
+                value={postContent}
+                onChange={(e) => setPostContent(e.target.value)}
+                placeholder="Share something with your group..."
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                rows={3}
+                maxLength={2000}
+              />
+              {postError ? <p className="text-sm text-red-600 dark:text-red-400">{postError}</p> : null}
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-400">{postContent.length}/2000</p>
+                <Button type="submit" size="sm" disabled={posting || postContent.trim().length < 1}>
+                  {posting ? "Posting..." : "Post"}
+                </Button>
+              </div>
+            </form>
             {groupPosts.length ? (
               <div className="mt-6 space-y-4">
                 {groupPosts.map((post) => {
                   const author = users.find((user) => user.id === post.author_id);
+                  const canDelete = post.author_id === currentUser.id || isAdmin;
                   return (
                     <div key={post.id} className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        {author?.display_name ?? "Member"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">{formatFullDateTime(post.created_at)}</p>
-                      <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">{post.content}</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {author?.display_name ?? "Member"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">{formatFullDateTime(post.created_at)}</p>
+                        </div>
+                        {canDelete ? (
+                          <button
+                            onClick={() => handleDeletePost(post.id)}
+                            className="text-xs text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
+                      <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{post.content}</p>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">No saved discussion posts.</p>
+              <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">No posts yet. Start the conversation!</p>
             )}
           </Card>
-          <Alert variant="info" title="Posting is unavailable">{unavailable}</Alert>
+          <Alert variant="info" title="Real discussion">Posts are saved to Supabase and visible to all group members.</Alert>
         </div>
       ) : null}
       {tab === "resources" ? (
